@@ -1,2 +1,679 @@
-afd;asda;sldkjf;asdkljf
+#include "WPILib.h"
+#include "math.h"
+#include "servo.h"
+#include <AnalogGyro.h>
+#include <ADXRS450_Gyro.h>
 
+/**
+ * This is a demo program showing the use of the RobotDrive class.
+ * The SampleRobot class is the base of a robot application that will automatically call your
+ * Autonomous and OperatorControl methods at the right time as controlled by the switches on
+ * the driver station or the field controls.
+ *
+ * WARNING: While it may look like a good choice to use for your code if you're inexperienced,
+ * don't. Unless you know what you are doing, complex code will be much more difficult under
+ * this system. Use IterativeRobot or Command-Based instead if you're new.
+ */
+class Robot: public SampleRobot
+{
+	RobotDrive myRobot; // robot drive system
+	Joystick stick1, stick2, stick3; // only joystick
+	VictorSP VictorLeft1, VictorLeft2, VictorRight1, VictorRight2;
+	Talon shooterJag1, shooterJag2, pushJag, elevatorJag, windowJag;
+	AnalogInput ultraSonicSensor, potentiometer;
+	float range, volt;
+	DigitalInput limitSwitchTop, limitSwitchBottom, windowSwitchTop, windowSwitchTopAlternate, windowSwitchBottom, windowSwitchBottomAlternate;
+	//AnalogGyro Gyro;
+	//GyroBase Gyro;
+	ADXRS450_Gyro Gyro;
+	float xAdjust = 0.0, yAdjust = 0.0, zAdjust = 0.0;
+	float xFinal = 0.0, yFinal = 0.0, zFinal = 0.0;
+	bool TankDrive = false;
+	float GyroConstant = 0.03;
+	double angle = 0.0;
+	IMAQdxSession session;
+	Image *frame;
+	IMAQdxError imaqError;
+	Encoder encoder, encoderTest;
+	SendableChooser *chooser;
+	const std::string autoNameDefault = "Default";
+	const std::string autoNameCustom = "My Auto";
+
+public:
+	Robot() :
+			myRobot(VictorLeft1, VictorLeft2, VictorRight1, VictorRight2),	// these must be initialized in the same order
+			stick1(0),		// as they are declared above.
+			stick2(1),
+			stick3(2),
+			VictorLeft1(0),
+			VictorLeft2(1),
+			VictorRight1(2),
+			VictorRight2(3),
+			shooterJag1(4),
+			shooterJag2(5),
+			pushJag(6),
+			elevatorJag(7),
+			windowJag(8),
+			ultraSonicSensor (1),
+			potentiometer(2),
+			limitSwitchTop(0),
+			limitSwitchBottom (2),
+			windowSwitchTop(4),
+			windowSwitchTopAlternate(5),
+			windowSwitchBottom(6),
+			windowSwitchBottomAlternate(7),
+			Gyro(SPI::Port::kOnboardCS0),
+			encoder(8,9,false, Encoder::EncodingType::k4X),
+			encoderTest(1,3,false, Encoder::EncodingType::k4X),
+			chooser()
+	{
+		//Note SmartDashboard is not initialized here, wait until RobotInit to make SmartDashboard calls
+		myRobot.SetExpiration(0.1);
+		encoder.SetDistancePerPulse(8.0*3.1415);// you may need to change or remove this to match your robot
+	}
+
+	void RobotInit()
+	{
+		 // create an image
+		frame = imaqCreateImage(IMAQ_IMAGE_RGB, 0);
+		//the camera name (ex "cam0") can be found through the roborio web interface
+		imaqError = IMAQdxOpenCamera("cam0", IMAQdxCameraControlModeController, &session);
+		if(imaqError != IMAQdxErrorSuccess) {
+			DriverStation::ReportError("IMAQdxOpenCamera error: " + std::to_string((long)imaqError) + "\n");
+		}
+		imaqError = IMAQdxConfigureGrab(session);
+		if(imaqError != IMAQdxErrorSuccess) {
+			DriverStation::ReportError("IMAQdxConfigureGrab error: " + std::to_string((long)imaqError) + "\n");
+		}
+		chooser = new SendableChooser();
+		chooser->AddDefault(autoNameDefault, (void*)&autoNameDefault);
+		chooser->AddObject(autoNameCustom, (void*)&autoNameCustom);
+		SmartDashboard::PutData("Auto Modes", chooser);
+	}
+
+	/**
+	 * This autonomous (along with the chooser code above) shows how to select between different autonomous modes
+	 * using the dashboard. The sendable chooser code works with the Java SmartDashboard. If you prefer the LabVIEW
+	 * Dashboard, remove all of the chooser code and uncomment the GetString line to get the auto name from the text box
+	 * below the Gyro
+	 *
+	 * You can add additional auto modes by adding additional comparisons to the if-else structure below with additional strings.
+	 * If using the SendableChooser make sure to add them to the chooser code above as well.
+	 */
+	void Autonomous()
+	{
+
+		std::string autoSelected = *((std::string*)chooser->GetSelected());
+		//std::string autoSelected = SmartDashboard::GetString("Auto Selector", autoNameDefault);
+		std::cout << "Auto selected: " << autoSelected << std::endl;
+
+		if(autoSelected == autoNameCustom){
+			//Custom Auto goes here
+			std::cout << "Running custom Autonomous" << std::endl;
+
+	 //Low Bar Auto
+			Timer autoTimer;
+			myRobot.SetSafetyEnabled(false);
+			autoTimer.Reset();
+			Gyro.Reset();
+			encoderTest.Reset();
+			autoTimer.Start();
+			while(encoderTest.GetRaw()< 200)
+			{
+				elevatorJag.Set(.7);
+			}
+			elevatorJag.Set(0);
+							encoder.Reset();
+							while(encoder.GetRaw() > -8295)
+							{
+								angle = Gyro.GetAngle();
+								myRobot.ArcadeDrive(.3, .5*GyroConstant*Gyro.GetAngle(),0);
+								SmartDashboard::PutNumber("Distance Auto", encoder.GetDistance());
+											SmartDashboard::PutNumber("Pulse Count Auto", encoder.Get());
+											SmartDashboard::PutNumber("Raw Pulse Auto", encoder.GetRaw());
+								SmartDashboard::PutNumber("Gyro Auto", Gyro.GetAngle());
+
+							}
+							myRobot.ArcadeDrive (0,0,0);
+							encoder.Reset();
+							autoTimer.Stop();
+							autoTimer.Reset();
+							Gyro.Reset();
+							while (Gyro.GetAngle()< 55)
+															{
+																angle = Gyro.GetAngle();
+																myRobot.ArcadeDrive(0, -.15,0);
+																SmartDashboard::PutNumber("Distance Auto", encoder.GetDistance());
+																SmartDashboard::PutNumber("Pulse Count Auto", encoder.Get());
+																SmartDashboard::PutNumber("Raw Pulse Auto", encoder.GetRaw());
+																SmartDashboard::PutNumber("Gyro Auto", Gyro.GetAngle());
+															}
+							myRobot.ArcadeDrive (0,0,0);
+						/*
+							Gyro.Reset();
+							encoder.Reset();
+														while(encoder.GetRaw() > -1400)
+														{
+															angle = Gyro.GetAngle();
+															myRobot.ArcadeDrive(.2, .5*GyroConstant*Gyro.GetAngle(),0);
+															SmartDashboard::PutNumber("Distance Auto", encoder.GetDistance());
+																		SmartDashboard::PutNumber("Pulse Count Auto", encoder.Get());
+																		SmartDashboard::PutNumber("Raw Pulse Auto", encoder.GetRaw());
+															SmartDashboard::PutNumber("Gyro Auto", Gyro.GetAngle());
+
+														}
+														myRobot.ArcadeDrive (0,0,0);
+														encoder.Reset();
+							myRobot.ArcadeDrive(-.2, .5*GyroConstant*Gyro.GetAngle(),0);
+							Wait(.1);
+							myRobot.ArcadeDrive (0,0,0);
+							*/
+							while(encoderTest.GetRaw()< 850)
+										{
+											elevatorJag.Set(.6);
+										}
+										elevatorJag.Set(0);
+							shooterJag1.Set(1);
+							shooterJag2.Set(-1);
+							elevatorJag.Set(.125);
+							Wait(2);
+							pushJag.Set(-1);
+							Wait(.2);
+							pushJag.Set(0);
+							pushJag.Set(.3);
+							Wait(.5);
+							pushJag.Set(0);
+							Wait(.5);
+							shooterJag1.Set(0);
+							shooterJag2.Set(0);
+							elevatorJag.Set(0);
+
+
+		}
+
+		else {
+			//Default Auto goes here
+			std::cout << "Running default Autonomous" << std::endl;
+			myRobot.SetSafetyEnabled(false);
+			myRobot.Drive(-0.5, 0.0); 	// drive forwards half speed
+			Wait(2.0); 				//    for 2 seconds
+			myRobot.Drive(0.0, 0.0); 	// stop robot
+		}
+
+	}
+
+	void Window ()
+	{
+		if(stick3.GetRawAxis(3) < -.8 && windowSwitchTop.Get()==1 && windowSwitchTopAlternate.Get()==1)
+						{
+							while(stick3.GetRawAxis(3) < -.8 && windowSwitchTop.Get()==1 && windowSwitchTopAlternate.Get()==1)
+								{
+									windowJag.Set(.3);
+									Drive();
+								}
+						}
+						else
+						{
+							windowJag.Set(false);
+						}
+
+						if(stick3.GetRawAxis(3) > .8 && windowSwitchBottom.Get()==1 && windowSwitchBottomAlternate.Get()==1)
+						{
+							while(stick3.GetRawAxis(3) > .8 && windowSwitchBottom.Get()==1 && windowSwitchBottomAlternate.Get()==1)
+								{
+									windowJag.Set(-.3);
+									Drive();
+								}
+						}
+						else
+						{
+							windowJag.Set(false);
+						}
+	}
+
+	void Elevator ()
+	{
+
+		if(stick3.GetRawAxis(1) < -.8 && limitSwitchTop.Get() == 1  )
+				{
+					while(stick3.GetRawAxis(1) < -.8 && limitSwitchTop.Get() == 1)
+						{
+							elevatorJag.Set(.7);
+							Drive();
+						}
+				}
+				else
+				{
+					elevatorJag.Set(false);
+				}
+
+				if(stick3.GetRawAxis(1) > .8 && limitSwitchBottom.Get() == 1 )
+				{
+					while(stick3.GetRawAxis(1) > .8 && limitSwitchBottom.Get() == 1)
+						{
+							elevatorJag.Set(-.7);
+							Drive();
+						}
+				}
+				else
+				{
+					elevatorJag.Set(false);
+				}
+	}
+
+	void ElevatorWithoutSwitch ()
+		{
+
+		if(stick3.GetPOV() == 0)
+					{
+						while(stick3.GetPOV() == 0)
+							{
+								elevatorJag.Set(.7);
+								Drive();
+							}
+					}
+					else
+					{
+						elevatorJag.Set(false);
+					}
+
+					if(stick3.GetPOV() == 180)
+					{
+						while(stick3.GetPOV() == 180)
+							{
+								elevatorJag.Set(-.7);
+								Drive();
+							}
+					}
+					else
+					{
+						elevatorJag.Set(false);
+					}
+		}
+
+	void ElevatorLowGoal()
+	{
+		if(stick3.GetRawButton(7) == true && encoderTest.GetRaw() < 274)
+							{
+								SmartDashboard::PutNumber("EncoderTest", encoderTest.GetRaw());
+									while(stick3.GetRawButton(7) == true && encoderTest.GetRaw() < 274)
+										{
+											SmartDashboard::PutNumber("EncoderTest", encoderTest.GetRaw());
+											elevatorJag.Set(.5);
+											Drive();
+										}
+							}
+							else
+							{
+								elevatorJag.Set(false);
+								SmartDashboard::PutNumber("EncoderTest", encoderTest.GetRaw());
+							}
+
+	}
+	void ElevatorWithEncoder()
+	{
+		if(stick3.GetRawAxis(1) < -.8 && encoderTest.GetRaw() < 893)
+					{
+						SmartDashboard::PutNumber("EncoderTest", encoderTest.GetRaw());
+							while(stick3.GetRawAxis(1) < -.8 && encoderTest.GetRaw() < 893)
+								{
+									SmartDashboard::PutNumber("EncoderTest", encoderTest.GetRaw());
+									elevatorJag.Set(.5);
+									Drive();
+								}
+					}
+					else
+					{
+						elevatorJag.Set(false);
+						SmartDashboard::PutNumber("EncoderTest", encoderTest.GetRaw());
+					}
+
+					if(stick3.GetRawAxis(1) > .8 && encoderTest.GetRaw() > 0)
+					{
+						SmartDashboard::PutNumber("EncoderTest", encoderTest.GetRaw());
+							while(stick3.GetRawAxis(1) > .8 && encoderTest.GetRaw() > 0)
+								{
+									elevatorJag.Set(-.5);
+									SmartDashboard::PutNumber("EncoderTest", encoderTest.GetRaw());
+									Drive();
+								}
+					}
+					else
+					{
+						elevatorJag.Set(false);
+						SmartDashboard::PutNumber("EncoderTest", encoderTest.GetRaw());
+					}
+					SmartDashboard::PutNumber("EncoderTest", encoderTest.GetRaw());
+	}
+	void Drive()
+			{
+				if(fabs(stick1.GetX()) < .25)
+				{
+					xFinal = 0;
+				}
+				else
+				{
+					xAdjust = ((fabs(stick1.GetX())-.24)*1.25);
+					xFinal = (((1.004662005*xAdjust*xAdjust)+(-.0119347319*xAdjust) + .0061538462)* (fabs(stick1.GetX()))/(stick1.GetX()));
+				}
+				if(fabs(stick1.GetZ()) < .01)
+				{
+					zFinal = 0;
+				}
+				else
+				{
+					zAdjust = ((fabs(stick1.GetZ())-.24)*1.06);
+					zFinal = (((1.004662005*zAdjust*zAdjust)+(-.0119347319*zAdjust) + .0061538462)* (fabs(stick1.GetZ()))/(stick1.GetZ()));
+				}
+				if(fabs(stick1.GetY()) < .2)
+				{
+					yFinal = 0;
+				}
+				else
+				{
+					yAdjust = (((fabs(stick1.GetY())-.19))*1.333);
+					yFinal = (((1.004662005*yAdjust*yAdjust)+(-.0119347319*yAdjust) + .0061538462)* (fabs(stick1.GetY()))/(stick1.GetY()));
+				}
+		if(!TankDrive)
+					{
+						myRobot.ArcadeDrive(-1*yFinal, -1*zFinal);
+					}
+		if(TankDrive)
+					{
+						myRobot.TankDrive(-1*stick2.GetY(), -1*stick1.GetY());
+					}
+		SmartDashboard::PutNumber("TeleOP raw", encoder.GetRaw());
+		SmartDashboard::PutNumber("TeleOP Encoder Test", encoderTest.GetRaw());
+	}
+
+	/**
+	 * Runs the motors with arcade steering.
+	 */
+	void OperatorControl()
+	{
+		// acquire images
+		IMAQdxStartAcquisition(session);
+		Timer teleTimer;
+		teleTimer.Reset();
+		Gyro.Reset();
+		encoder.Reset();
+
+		myRobot.SetSafetyEnabled(true);
+		while (IsOperatorControl() && IsEnabled())
+		{
+			if(stick3.GetRawButton(4))
+		{
+
+			encoderTest.Reset();
+		}
+			IMAQdxGrab(session, frame, true, NULL);
+				if(imaqError != IMAQdxErrorSuccess) {
+					DriverStation::ReportError("IMAQdxGrab error: " + std::to_string((long)imaqError) + "\n");
+				} else {
+					imaqDrawShapeOnImage(frame, frame, { 10, 10, 100, 100 }, DrawMode::IMAQ_DRAW_VALUE, ShapeMode::IMAQ_SHAPE_OVAL, 0.0f);
+					CameraServer::GetInstance()->SetImage(frame);
+				}
+				Wait(0.005);				// wait for a motor update time
+
+			SmartDashboard::PutNumber("Potentiometer", potentiometer.GetAverageVoltage());
+			SmartDashboard::PutNumber("Gyro", Gyro.GetAngle());
+			SmartDashboard::PutNumber("Distance", encoder.GetDistance());
+			SmartDashboard::PutNumber("Pulse Count", encoder.Get());
+			SmartDashboard::PutNumber("Raw Pulse", encoder.GetRaw());
+			//ultrasonic sensor
+			volt = ultraSonicSensor.GetAverageVoltage();
+			range = (volt*(512/5));
+			SmartDashboard::PutNumber("Voltage", volt);
+			SmartDashboard::PutNumber("Range", range);
+
+
+
+		//drive code
+			Drive();
+
+			if(stick1.GetRawButton(2))
+						{
+							TankDrive = true;
+						}
+			if(stick1.GetRawButton(1))
+						{
+							TankDrive = false;
+						}
+						SmartDashboard::PutNumber("TankDrive", TankDrive);
+		//bring balls into shooter
+			if(stick3.GetRawButton(6)==true)
+			{
+				shooterJag1.Set(-.3);
+				shooterJag2.Set(.3);
+				Drive();
+				//Elevator();
+				ElevatorWithEncoder();
+				Window();
+				ElevatorWithoutSwitch();
+				ElevatorLowGoal();
+
+			}
+			else
+			{
+				shooterJag1.Set(false);
+				shooterJag2.Set(false);
+			}
+
+		//shooter combo
+		/*
+			if(stick3.GetRawButton(2))
+			{
+			shooterJag1.Set(1);
+			shooterJag2.Set(-1);
+			Wait(2);
+			pushJag.Set(-1);
+			Wait(.2);
+			pushJag.Set(.2);
+			Wait(.4);
+			pushJag.Set(0);
+			Wait(.5);
+			shooterJag1.Set(0);
+			shooterJag2.Set(0);
+			}
+*/
+			if(stick3.GetRawButton(2))
+			{
+				teleTimer.Start();
+				Drive();
+				ElevatorWithEncoder();
+				Window();
+				ElevatorWithoutSwitch();
+				ElevatorLowGoal();
+				while(teleTimer.Get() < 2)
+				{
+					shooterJag1.Set(1);
+					shooterJag2.Set(-1);
+					elevatorJag.Set(.125);
+					Drive();
+					ElevatorWithEncoder();
+					Window();
+					ElevatorWithoutSwitch();
+					ElevatorLowGoal();
+				}
+				ElevatorWithoutSwitch();
+				Drive();
+				ElevatorWithEncoder();
+				ElevatorLowGoal();
+				Window();
+				teleTimer.Stop();
+				teleTimer.Reset();
+				teleTimer.Start();
+				while(teleTimer.Get()<.2)
+				{
+					pushJag.Set(-1);
+					Drive();
+					ElevatorWithoutSwitch();
+					ElevatorWithEncoder();
+					ElevatorLowGoal();
+					Window();
+				}
+				Drive();
+				ElevatorWithoutSwitch();
+				ElevatorWithEncoder();
+				ElevatorLowGoal();
+				Window();
+				teleTimer.Stop();
+				teleTimer.Reset();
+				pushJag.Set(0);
+				teleTimer.Start();
+				while(teleTimer.Get()<.5)
+				{
+				pushJag.Set(.3);
+				Drive();
+				ElevatorWithoutSwitch();
+				ElevatorWithEncoder();
+				ElevatorLowGoal();
+				Window();
+				}
+				Drive();
+				ElevatorWithoutSwitch();
+				ElevatorWithEncoder();
+				ElevatorLowGoal();
+				Window();
+				teleTimer.Stop();
+				teleTimer.Reset();
+				pushJag.Set(0);
+				teleTimer.Start();
+				while(teleTimer.Get() < .5)
+				{
+				shooterJag1.Set(1);
+				shooterJag2.Set(-1);
+				elevatorJag.Set(.125);
+				ElevatorWithoutSwitch();
+				Drive();
+				ElevatorWithEncoder();
+				ElevatorLowGoal();
+				Window();
+				}
+				Drive();
+				ElevatorWithoutSwitch();
+				ElevatorWithEncoder();
+				ElevatorLowGoal();
+				Window();
+				teleTimer.Stop();
+				teleTimer.Reset();
+				shooterJag1.Set(0);
+				shooterJag2.Set(0);
+				elevatorJag.Set(0);
+			}
+		//elevator with encoder
+		//	ElevatorWithEncoder();
+			// elevator with limit switch
+			Elevator();
+		// elevator without switch
+			ElevatorWithoutSwitch();
+
+			ElevatorLowGoal();
+			/*
+		if(stick3.GetRawAxis(1) < -.8 && limitSwitchTop.Get() == 1 && limitSwitchTopAlternate.Get() == 1)
+		{
+			while(stick3.GetRawAxis(1) < -.8 && limitSwitchTop.Get() == 1 && limitSwitchTopAlternate.Get() == 1)
+				{
+					elevatorJag.Set(1);
+					Drive();
+				}
+		}
+		else
+		{
+			elevatorJag.Set(false);
+		}
+
+		if(stick3.GetRawAxis(1) > .8 && limitSwitchBottom.Get() == 1 && limitSwitchBottomAlternate.Get()==1)
+		{
+			while(stick3.GetRawAxis(1) > .8 && limitSwitchBottom.Get() == 1 && limitSwitchBottomAlternate.Get()==1)
+				{
+					elevatorJag.Set(-1);
+					Drive();
+				}
+		}
+		else
+		{
+			elevatorJag.Set(false);
+		}
+*/
+
+/*
+			//elevator with potentiometer
+			if(stick3.GetRawAxis(1) < -.8 && potentiometer.GetAverageVoltage() < 4)
+			{
+				SmartDashboard::PutNumber("Potentiometer", potentiometer.GetAverageVoltage());
+					while(stick3.GetRawAxis(1) < -.8 && potentiometer.GetAverageVoltage() < 4)
+						{
+							SmartDashboard::PutNumber("Potentiometer", potentiometer.GetAverageVoltage());
+							elevatorJag.Set(1);
+							Drive();
+						}
+			}
+			else
+			{
+				elevatorJag.Set(false);
+				SmartDashboard::PutNumber("Potentiometer", potentiometer.GetAverageVoltage());
+			}
+
+			if(stick3.GetRawAxis(1) > .8 && potentiometer.GetAverageVoltage() > 1)
+			{
+				SmartDashboard::PutNumber("Potentiometer", potentiometer.GetAverageVoltage());
+					while(stick3.GetRawAxis(1) > .8 && potentiometer.GetAverageVoltage() > 1)
+						{
+							elevatorJag.Set(-1);
+							SmartDashboard::PutNumber("Potentiometer", potentiometer.GetAverageVoltage());
+							Drive();
+						}
+			}
+			else
+			{
+				elevatorJag.Set(false);
+				SmartDashboard::PutNumber("Potentiometer", potentiometer.GetAverageVoltage());
+			}
+				SmartDashboard::PutNumber("Potentiometer", potentiometer.GetAverageVoltage());
+*/
+
+		//window motor
+			Window();
+			/*
+		if(stick3.GetRawAxis(3) < -.8 && windowSwitchTop.Get()==1 && windowSwitchTopAlternate.Get()==1)
+				{
+					while(stick3.GetRawAxis(3) < -.8 && windowSwitchTop.Get()==1 && windowSwitchTopAlternate.Get()==1)
+						{
+							windowJag.Set(.3);
+							Drive();
+						}
+				}
+				else
+				{
+					windowJag.Set(false);
+				}
+
+				if(stick3.GetRawAxis(3) > .8 && windowSwitchBottom.Get()==1 && windowSwitchBottomAlternate.Get()==1)
+				{
+					while(stick3.GetRawAxis(3) > .8 && windowSwitchBottom.Get()==1 && windowSwitchBottomAlternate.Get()==1)
+						{
+							windowJag.Set(-.3);
+							Drive();
+						}
+				}
+				else
+				{
+					windowJag.Set(false);
+				}
+				*/
+
+		}
+		 // stop image acquisition
+				IMAQdxStopAcquisition(session);
+	}
+
+	/**
+	 * Runs during test mode
+	 */
+	void Test()
+	{
+	}
+};
+
+START_ROBOT_CLASS(Robot)
